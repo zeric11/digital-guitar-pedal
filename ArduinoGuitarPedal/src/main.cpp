@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <stdio.h>
 #include "U8glib.h"
+#include "Effects.h"
 
 
 // defining hardware resources.
@@ -21,21 +22,33 @@
 #define LED_BRIGHTNESS 8
  
 // other variables
-int input, vol_variable=10000;
-int counter = 0;
+int input, counter = 0;
 unsigned int ADC_low, ADC_high;
 
 U8GLIB_SH1106_128X64 u8g(U8G_I2C_OPT_NO_ACK); // Display which does not send ACK
- 
+
+// Effects
+#define EFFECT_AMOUNT 3
+static Effect cleanEffect; // keep static to ensure stable storage
+static BoostEffect boostEffect;
+static DistortionEffect distortionEffect;
+Effect* effects[] = {
+    &cleanEffect,
+    &boostEffect,
+    &distortionEffect
+};
+int selectedEffectIdx = 2;
+Effect* selectedEffect = effects[selectedEffectIdx];
+
+/* -------------------------------------------------------------------------- */
 
 void setup() {
     u8g.firstPage(); 
     do {
         u8g.setFont(u8g_font_helvR18r);
-        u8g.drawStr(0, 30, "BOOSTER");    
-        u8g.drawStr(0, 60, "  EFFECT");
+        u8g.drawStr(0, 30, "WELCOME");
     } while(u8g.nextPage());
- 
+
     //setup IO
     pinMode(FOOTSWITCH, INPUT_PULLUP);
     pinMode(TOGGLE, INPUT_PULLUP);
@@ -59,12 +72,15 @@ void setup() {
     ICR4L = (PWM_FREQ & 0xff);
     DDRB |= ((PWM_QTY << 1) | 0x02); // turn on outputs
     sei(); // turn on interrupts - not really necessary with arduino
+
+    //Serial.begin(115200);
+    //Serial.println("Setup completed");
 }
  
 
 void loop() {
-    /*This effect does not have oled screen updates, when using the "map" function the 
-    code goes too slow to be used the oled in real time.*/
+    // Write to OLED screen.
+    selectedEffect->drawScreen(u8g);
    
     // Turn on the LED if the effect is ON.
     //if(digitalRead(FOOTSWITCH)) digitalWrite(LED, HIGH); 
@@ -83,23 +99,18 @@ ISR(TIMER4_CAPT_vect) {
     //// All the Digital Signal Processing happens here: ////
  
     ++counter; // to save resources, the pushbuttons are checked every 100 times.
-    if(counter == 100) { 
+    if(counter == 1000) { 
         counter = 0;
-        if(!digitalRead(PUSHBUTTON_2)) {
-            printf("PUSHBUTTON_2 pressed\n");
-            if(vol_variable < 32768) vol_variable = vol_variable + 20; // increase the vol
-            digitalWrite(LED, LOW); // blinks the led
-        }
-        
-        if(!digitalRead(PUSHBUTTON_1)) {
-            printf("PUSHBUTTON_1 pressed\n");
-            if(vol_variable > 0) vol_variable = vol_variable - 20; // decrease vol
-            digitalWrite(LED, LOW); // blinks the led
-        }
+        selectedEffect->handleModUpdate(
+            !digitalRead(PUSHBUTTON_1),
+            !digitalRead(PUSHBUTTON_2),
+            LED
+        );
+
+        // Selected effect modified input
+        selectedEffect->writeInput(input);
     }
- 
-    // the amplitude of the input signal is modified following the vol_variable value
-    input = map(input, -32768, +32768, -vol_variable, vol_variable);
+
     
     // write the PWM signal
     OCR4AL = ((input + 0x8000) >> 8); // convert to unsigned, send out high byte

@@ -42,3 +42,5 @@
 
 # Ignore reference effects from ElectroSmash
 ReferenceEffects/*
+
+.vscode
